@@ -1,0 +1,20 @@
+name: classic-rag
+metadata:
+  template: classic-rag@0.0.1
+services:
+  api:
+    project: ./src/Api
+    host: containerapp
+    language: dotnet
+    docker:
+      path: ./Dockerfile
+      context: .
+      remoteBuild: true
+  web:
+    project: ./src/Web
+    host: containerapp
+    language: docker
+    docker:
+      path: ./Dockerfile
+      context: .
+      remoteBuild: true

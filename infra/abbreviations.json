@@ -1,0 +1,11 @@
+{
+  "documentDBDatabaseAccounts": "cosmos-",
+  "searchSearchServices": "srch-",
+  "cognitiveServicesAccounts": "oai-",
+  "containerRegistryRegistries": "cr",
+  "appContainerApps": "ca-",
+  "appManagedEnvironments": "cae-",
+  "managedIdentityUserAssignedIdentities": "id-",
+  "operationalInsightsWorkspaces": "log-",
+  "insightsComponents": "appi-"
+}

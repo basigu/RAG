@@ -1,0 +1,24 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.dll
+*.exe
+*.pdb
+*.log
+
+## Azure Developer CLI
+.azure/
+!.azure/deployment-plan.md
+
+## IDE
+.vs/
+.vscode/
+*.swp
+*~
+
+## OS
+.DS_Store
+Thumbs.db

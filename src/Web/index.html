@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Classic RAG - Real Estate Assistant</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #f0f2f5; height: 100vh; display: flex; flex-direction: column; }
+        header { background: #1a1a2e; color: white; padding: 16px 24px; display: flex; align-items: center; gap: 12px; }
+        header h1 { font-size: 20px; font-weight: 600; }
+        header span { font-size: 13px; opacity: 0.7; }
+        .container { flex: 1; display: flex; flex-direction: column; max-width: 900px; width: 100%; margin: 0 auto; padding: 16px; overflow: hidden; }
+        .messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding-bottom: 16px; }
+        .message { display: flex; gap: 12px; max-width: 85%; animation: fadeIn 0.3s ease; }
+        .message.user { align-self: flex-end; flex-direction: row-reverse; }
+        .message .avatar { width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
+        .message.assistant .avatar { background: #1a1a2e; color: white; }
+        .message.user .avatar { background: #0078d4; color: white; }
+        .message .content { background: white; border-radius: 12px; padding: 12px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .message.user .content { background: #0078d4; color: white; }
+        .message .content p { line-height: 1.5; font-size: 14px; white-space: pre-wrap; }
+        .sources { margin-top: 12px; border-top: 1px solid #e0e0e0; padding-top: 8px; }
+        .sources h4 { font-size: 12px; color: #666; margin-bottom: 8px; }
+        .source-card { background: #f8f9fa; border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px; margin-bottom: 6px; font-size: 13px; }
+        .source-card .title { font-weight: 600; color: #1a1a2e; }
+        .source-card .details { color: #666; margin-top: 4px; }
+        .source-card .price { color: #0078d4; font-weight: 600; }
+        .input-area { display: flex; gap: 8px; padding: 16px 0 0; }
+        .input-area input { flex: 1; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 24px; font-size: 14px; outline: none; transition: border-color 0.2s; }
+        .input-area input:focus { border-color: #0078d4; }
+        .input-area button { background: #0078d4; color: white; border: none; border-radius: 24px; padding: 12px 24px; font-size: 14px; cursor: pointer; transition: background 0.2s; }
+        .input-area button:hover { background: #006abc; }
+        .input-area button:disabled { background: #ccc; cursor: not-allowed; }
+        .typing { display: flex; gap: 4px; padding: 4px 0; }
+        .typing span { width: 8px; height: 8px; background: #999; border-radius: 50%; animation: bounce 1.4s infinite; }
+        .typing span:nth-child(2) { animation-delay: 0.2s; }
+        .typing span:nth-child(3) { animation-delay: 0.4s; }
+        .actions { display: flex; gap: 8px; margin-bottom: 8px; }
+        .actions button { background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 8px 16px; font-size: 13px; cursor: pointer; transition: all 0.2s; }
+        .actions button:hover { background: #f0f2f5; border-color: #0078d4; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes bounce { 0%, 80%, 100% { transform: translateY(0); } 40% { transform: translateY(-6px); } }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Classic RAG - Real Estate Assistant</h1>
+        <span>Powered by Azure Cosmos DB, AI Search & OpenAI</span>
+    </header>
+    <div class="container">
+        <div class="actions">
+            <button onclick="seedData()">Seed Sample Data</button>
+            <button onclick="reindex()">Reindex Search</button>
+        </div>
+        <div class="messages" id="messages">
+            <div class="message assistant">
+                <div class="avatar">AI</div>
+                <div class="content">
+                    <p>Welcome! I'm your real estate assistant. Ask me about properties — try "Find me a 3-bedroom house in Seattle" or "What luxury condos are available?"</p>
+                    <p style="margin-top:8px; font-size:12px; color:#888;">Tip: Click "Seed Sample Data" first to load 20 sample listings into the database.</p>
+                </div>
+            </div>
+        </div>
+        <div class="input-area">
+            <input type="text" id="userInput" placeholder="Ask about properties..." onkeydown="if(event.key==='Enter')sendMessage()" />
+            <button id="sendBtn" onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+    <script>
+        const messagesEl = document.getElementById('messages');
+        const inputEl = document.getElementById('userInput');
+        const sendBtn = document.getElementById('sendBtn');
+        let API_BASE = '';
+
+        // Load API URL from config generated at container startup
+        fetch('/config.json')
+            .then(r => r.json())
+            .then(c => { API_BASE = (c.API_BASE_URL || '').replace(/\/+$/, ''); })
+            .catch(() => { console.warn('No config.json found, using relative paths'); });
+
+        function apiUrl(path) { return API_BASE + path; }
+
+        function addMessage(role, text, sources) {
+            const div = document.createElement('div');
+            div.className = `message ${role}`;
+            let html = `<div class="avatar">${role === 'user' ? 'You' : 'AI'}</div><div class="content"><p>${escapeHtml(text)}</p>`;
+            if (sources && sources.length > 0) {
+                html += `<div class="sources"><h4>Properties Found:</h4>`;
+                sources.forEach(s => {
+                    html += `<div class="source-card">
+                        <div class="title">${escapeHtml(s.title)}</div>
+                        <div class="details">${s.city}, ${s.state} | ${s.bedrooms}bd/${s.bathrooms}ba | ${s.squareFeet} sqft</div>
+                        <div class="price">$${Number(s.price).toLocaleString()}</div>
+                    </div>`;
+                });
+                html += `</div>`;
+            }
+            html += `</div>`;
+            div.innerHTML = html;
+            messagesEl.appendChild(div);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+
+        function addTyping() {
+            const div = document.createElement('div');
+            div.className = 'message assistant';
+            div.id = 'typing';
+            div.innerHTML = `<div class="avatar">AI</div><div class="content"><div class="typing"><span></span><span></span><span></span></div></div>`;
+            messagesEl.appendChild(div);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+
+        function removeTyping() {
+            const el = document.getElementById('typing');
+            if (el) el.remove();
+        }
+
+        function escapeHtml(str) {
+            const d = document.createElement('div');
+            d.textContent = str;
+            return d.innerHTML;
+        }
+
+        async function sendMessage() {
+            const text = inputEl.value.trim();
+            if (!text) return;
+            inputEl.value = '';
+            sendBtn.disabled = true;
+            addMessage('user', text);
+            addTyping();
+            try {
+                const res = await fetch(apiUrl('/chat'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: text })
+                });
+                removeTyping();
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                addMessage('assistant', data.answer, data.sources);
+            } catch (err) {
+                removeTyping();
+                addMessage('assistant', `Error: ${err.message}. Make sure you've seeded data first.`);
+            }
+            sendBtn.disabled = false;
+            inputEl.focus();
+        }
+
+        async function seedData() {
+            addMessage('assistant', 'Seeding sample real estate data...');
+            try {
+                const res = await fetch(apiUrl('/admin/seed'), { method: 'POST' });
+                const data = await res.json();
+                addMessage('assistant', data.message);
+            } catch (err) {
+                addMessage('assistant', `Seed error: ${err.message}`);
+            }
+        }
+
+        async function reindex() {
+            addMessage('assistant', 'Reindexing all properties from Cosmos DB to Azure AI Search...');
+            try {
+                const res = await fetch(apiUrl('/admin/reindex'), { method: 'POST' });
+                const data = await res.json();
+                addMessage('assistant', data.message);
+            } catch (err) {
+                addMessage('assistant', `Reindex error: ${err.message}`);
+            }
+        }
+    </script>
+</body>
+</html>
