@@ -144,7 +144,7 @@ sequenceDiagram
 
 ```bash
 # Clone and navigate to the project
-cd ClassicRag
+cd RAG
 
 # Authenticate with Azure
 azd auth login
